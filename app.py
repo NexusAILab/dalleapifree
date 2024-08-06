@@ -63,11 +63,13 @@ async def create_images(session: ClientSession, prompt: str, timeout: int = TIME
         text = (await response.text()).lower()
         for error in ERRORS:
             if error in text:
+                print(f"Create images failed: {error}")
                 raise RuntimeError(f"Create images failed: {error}")
     if response.status != 302:
         url = f"{BING_URL}/images/create?q={url_encoded_prompt}&rt=3&FORM=GENCRE"
         async with session.post(url, allow_redirects=False, timeout=timeout) as response:
             if response.status != 302:
+                print(f"Create images failed. Code: {response.status}")
                 raise RuntimeError(f"Create images failed. Code: {response.status}")
 
     redirect_url = response.headers["Location"].replace("&nfy=1", "")
