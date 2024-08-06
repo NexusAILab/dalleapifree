@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Gallery</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(-45deg, #6a1b9a, #9c27b0, #ab47bc, #ce93d8);
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+            overflow-y: auto; /* Changed from hidden to auto for vertical scrolling */
+        }
+        @keyframes gradient {
+            0% { background-position: 0% 0%; }
+            50% { background-position: 100% 100%; }
+            100% { background-position: 0% 0%; }
+        }
+        h1 {
+            color: #fff;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        #imageForm {
+            margin-bottom: 20px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        #prompt {
+            padding: 10px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            outline: none;
+        }
+        #prompt:focus {
+            border-color: #6a1b9a;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            color: white;
+            background-color: #6a1b9a;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        button:hover {
+            background-color: #4a0072;
+        }
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+            width: 100%;
+            max-width: 1200px;
+            padding: 20px;
+        }
+        .gallery img {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
+            cursor: pointer;
+            width: 100%;
+            height: auto;
+        }
+        .gallery img:hover {
+            transform: scale(1.05);
+        }
+        .loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #6a1b9a;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal img {
+            max-width: 90%;
+            max-height: 80%;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+        .modal .close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 24px;
+            color: #fff;
+            cursor: pointer;
+            z-index: 1001;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image Gallery</h1>
+    <form id="imageForm">
+        <input type="text" id="prompt" placeholder="Enter image prompt" required>
+        <button type="submit">Load Images</button>
+    </form>
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+    </div>
+    <div class="gallery" id="imageGallery"></div>
+
+    <!-- Modal -->
+    <div class="modal" id="modal">
+        <span class="close" id="modalClose">&times;</span>
+        <img id="modalImg" src="" alt="Large view">
+    </div>
+
+    <script>
+        document.getElementById('imageForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const prompt = document.getElementById('prompt').value;
+            const gallery = document.getElementById('imageGallery');
+            const loading = document.getElementById('loading');
+
+            gallery.innerHTML = '';
+            loading.style.display = 'block';
+
+            try {
+                const response = await fetch(`/images?prompt=${encodeURIComponent(prompt)}`);
+                const images = await response.json();
+                if (Array.isArray(images)) {
+                    images.forEach(src => {
+                        const img = document.createElement('img');
+                        img.src = src;
+                        img.addEventListener('click', () => openModal(src));
+                        gallery.appendChild(img);
+                    });
+                } else {
+                    gallery.innerHTML = '<p>No images found.</p>';
+                }
+            } catch (error) {
+                gallery.innerHTML = '<p>Failed to load images. Please try again.</p>';
+            } finally {
+                loading.style.display = 'none';
+            }
+        });
+
+        function openModal(src) {
+            const modal = document.getElementById('modal');
+            const modalImg = document.getElementById('modalImg');
+            modalImg.src = src;
+            modal.style.display = 'flex';
+        }
+
+        document.getElementById('modalClose').addEventListener('click', () => {
+            document.getElementById('modal').style.display = 'none';
+        });
+
+        window.addEventListener('click', (event) => {
+            if (event.target === document.getElementById('modal')) {
+                document.getElementById('modal').style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
