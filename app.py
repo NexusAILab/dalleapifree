@@ -5,6 +5,7 @@ from aiohttp import ClientSession, BaseConnector
 from urllib.parse import quote
 from typing import List, Dict
 from flask import Flask, jsonify, request, send_from_directory
+import os 
 
 app = Flask(__name__)
 
@@ -142,7 +143,7 @@ def index():
     return send_from_directory('static', 'index.html')
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000)
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
 """   
 async def main():
     cookies = [
