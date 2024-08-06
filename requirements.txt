@@ -2,3 +2,4 @@ Flask
 aiohttp
 beautifulsoup4
 gunicorn
+Flask[async]
