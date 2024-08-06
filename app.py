@@ -7,7 +7,7 @@ from typing import List, Dict
 from flask import Flask, request, jsonify
 import uuid
 from threading import Thread
-
+import os
 try:
     from bs4 import BeautifulSoup
     has_requirements = True
