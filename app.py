@@ -4,17 +4,16 @@ import json
 from aiohttp import ClientSession, BaseConnector
 from urllib.parse import quote
 from typing import List, Dict
-from flask import Flask, request, jsonify
-import uuid
-from threading import Thread
-import os
+from flask import Flask, jsonify, request, send_from_directory
+
+app = Flask(__name__)
+
 try:
     from bs4 import BeautifulSoup
     has_requirements = True
 except ImportError:
     has_requirements = False
 
-app = Flask(__name__)
 BING_URL = "https://www.bing.com"
 TIMEOUT_LOGIN = 1200
 TIMEOUT_IMAGE_CREATION = 300
@@ -28,7 +27,6 @@ BAD_IMAGES = [
     "https://r.bing.com/rp/in-2zU3AJUdkgFe7ZKv19yPBHVs.png",
     "https://r.bing.com/rp/TX9QuO3WzcCJz1uaaSwQAz39Kb0.jpg",
 ]
-tasks = {}
 
 def create_session(cookies: Dict[str, str], proxy: str = None, connector: BaseConnector = None) -> ClientSession:
     headers = {
@@ -54,7 +52,7 @@ def create_session(cookies: Dict[str, str], proxy: str = None, connector: BaseCo
 
 async def create_images(session: ClientSession, prompt: str, timeout: int = TIMEOUT_IMAGE_CREATION) -> List[str]:
     if not has_requirements:
-        raise ImportError('Install "beautifulsoup4" package')
+        raise MissingRequirementsError('Install "beautifulsoup4" package')
     url_encoded_prompt = quote(prompt)
     payload = f"q={url_encoded_prompt}&rt=4&FORM=GENCRE"
     url = f"{BING_URL}/images/create?q={url_encoded_prompt}&rt=4&FORM=GENCRE"
@@ -63,13 +61,12 @@ async def create_images(session: ClientSession, prompt: str, timeout: int = TIME
         text = (await response.text()).lower()
         for error in ERRORS:
             if error in text:
-                print(f"Create images failed: {error}")
+                pass
                 raise RuntimeError(f"Create images failed: {error}")
     if response.status != 302:
         url = f"{BING_URL}/images/create?q={url_encoded_prompt}&rt=3&FORM=GENCRE"
         async with session.post(url, allow_redirects=False, timeout=timeout) as response:
             if response.status != 302:
-                print(f"Create images failed. Code: {response.status}")
                 raise RuntimeError(f"Create images failed. Code: {response.status}")
 
     redirect_url = response.headers["Location"].replace("&nfy=1", "")
@@ -85,7 +82,7 @@ async def create_images(session: ClientSession, prompt: str, timeout: int = TIME
             raise RuntimeError(f"Timeout error after {timeout} sec")
         async with session.get(polling_url) as response:
             if response.status != 200:
-                raise RuntimeError(f"Polling images failed. Code: {response.status}")
+                raise RuntimeError(f"Polling images faild. Code: {response.status}")
             text = await response.text()
             if not text or "GenerativeImagesStatusPage" in text:
                 await asyncio.sleep(1)
@@ -97,7 +94,7 @@ async def create_images(session: ClientSession, prompt: str, timeout: int = TIME
     except:
         pass
     if error == "Pending":
-        raise RuntimeError("Prompt is being blocked")
+        raise RuntimeError("Prompt is been blocked")
     elif error:
         raise RuntimeError(error)
     return read_images(text)
@@ -114,41 +111,51 @@ def read_images(html_content: str) -> List[str]:
         raise RuntimeError("No images found")
     return images
 
-@app.route('/generate', methods=['POST'])
-def generate():
-    data = request.json
-    cookies = data.get('cookies')
-    prompt = data.get('prompt')
-    if not cookies or not prompt:
-        return jsonify({'error': 'Missing cookies or prompt'}), 400
+async def fetch_images(cookie, prompt):
+    async with create_session(cookies={'_U': cookie}) as session:
+        try:
+            images = await create_images(session, prompt)
+            return images
+        except Exception as e:
+            print(f"Error for cookie {cookie}: {e}")
+            return []
 
-    task_id = str(uuid.uuid4())
-    tasks[task_id] = {'status': 'pending', 'result': None}
+@app.route('/images', methods=['GET'])
+async def get_images():
+    prompt = request.args.get('prompt', '')
+    if not prompt:
+        return jsonify({"error": "Prompt is required"}), 400
 
-    def run_task(task_id, cookies, prompt):
-        async def task():
-            async with create_session(cookies) as session:
-                try:
-                    images = await create_images(session, prompt)
-                    tasks[task_id]['status'] = 'completed'
-                    tasks[task_id]['result'] = images
-                except Exception as e:
-                    tasks[task_id]['status'] = 'failed'
-                    tasks[task_id]['result'] = str(e)
-        asyncio.run(task())
+    cookies = [
+        '1gDyr76kjtfdoSESMQyelziRf68svs00c3v7NGn_foZivt7hg9xYMnPREGDYZIbpHiqQjN1aQRgQEWTp49ASATzKWo6F370HaSRT7YSM2GYXN0hWb_eZ6Axt0faAskVG8Di0sGmoS4MQ8aUPIyPq87b2pMIFKJX030R2F90AQ_C7VfOt4TPdn0vfaN6Ob0hN8DrM9R8XJxW_VvuMD4xssWA',
+        '1Z6MDLopA6Ew8hsPm7P_w7yvLB14APupuv2DfP1_OCxFgiI4tu3JgqW8R3OfFa_g7y23S0VBXwGkt4rUXDClC5JOB6v_wptkqLOWKiY0_ro9ajk26_kJmgkJUSGJuVk8PJ2rw_rWzWoaxulhBuwXtmjehadmzaMsIFl0OIkxNwVZzpqR2lWJtpMx_iTgyiBR5JIif-rj5DVRCsmeGI3E_vg',
+        '1PuyuSqJ9DuJDOhGH6cXfeu1iSFX4TNicgY3DrL4FHgFJ-0qHlavA-dq5pJfxJwIte1GhhRZJ3JHKDqWKXposqmwslUbeMFtWOIyF4B75I2vsuWREIaTvl2GCVvj2WO1kSbBW2PoSmoftwQnDQLGFyaOA9gOBJD-EBogd7BMjrxhppa1_NKAHhGagXcFhHJDlc16prbPLk7xCGBY5Fppfp0bcmmfLGifFGxXPT3XQdJg',
+        '1axEJnQWWspXv445u02fo0haaJ-zjnJrFGlKBpaLReoaRXX8_PpnFew9KM0ISoYI4vTvIG1kz_KuklFHZfPsaaQBtdLNWItySFZztq59fAi7VWXivvR183cqBeuwSvR_XQF5bM_DK4jFZJx3RxmM0_thcBcZVd5fLP6lYAFFku6a3GE63wSz03safei-fNDdWyRPh1gMDyaBm-SZ6TC4zkQ'
+    ]
+    tasks = [fetch_images(cookie, prompt) for cookie in cookies]
+    results = await asyncio.gather(*tasks)
+    all_images = [image for sublist in results for image in sublist]
+    return jsonify(all_images)
 
-    thread = Thread(target=run_task, args=(task_id, cookies, prompt))
-    thread.start()
-
-    return jsonify({'task_id': task_id})
-
-@app.route('/result/<task_id>', methods=['GET'])
-def result(task_id):
-    task = tasks.get(task_id)
-    if not task:
-        return jsonify({'error': 'Invalid task ID'}), 404
-
-    return jsonify({'status': task['status'], 'result': task['result']})
+@app.route('/')
+def index():
+    return send_from_directory('static', 'index.html')
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(host="0.0.0.0", port=5000)
+"""   
+async def main():
+    cookies = [
+        '1gDyr76kjtfdoSESMQyelziRf68svs00c3v7NGn_foZivt7hg9xYMnPREGDYZIbpHiqQjN1aQRgQEWTp49ASATzKWo6F370HaSRT7YSM2GYXN0hWb_eZ6Axt0faAskVG8Di0sGmoS4MQ8aUPIyPq87b2pMIFKJX030R2F90AQ_C7VfOt4TPdn0vfaN6Ob0hN8DrM9R8XJxW_VvuMD4xssWA',
+        '1Z6MDLopA6Ew8hsPm7P_w7yvLB14APupuv2DfP1_OCxFgiI4tu3JgqW8R3OfFa_g7y23S0VBXwGkt4rUXDClC5JOB6v_wptkqLOWKiY0_ro9ajk26_kJmgkJUSGJuVk8PJ2rw_rWzWoaxulhBuwXtmjehadmzaMsIFl0OIkxNwVZzpqR2lWJtpMx_iTgyiBR5JIif-rj5DVRCsmeGI3E_vg',
+        '1PuyuSqJ9DuJDOhGH6cXfeu1iSFX4TNicgY3DrL4FHgFJ-0qHlavA-dq5pJfxJwIte1GhhRZJ3JHKDqWKXposqmwslUbeMFtWOIyF4B75I2vsuWREIaTvl2GCVvj2WO1kSbBW2PoSmoftwQnDQLGFyaOA9gOBJD-EBogd7BMjrxhppa1_NKAHhGagXcFhHJDlc16prbPLk7xCGBY5Fppfp0bcmmfLGifFGxXPT3XQdJg',
+        '1axEJnQWWspXv445u02fo0haaJ-zjnJrFGlKBpaLReoaRXX8_PpnFew9KM0ISoYI4vTvIG1kz_KuklFHZfPsaaQBtdLNWItySFZztq59fAi7VWXivvR183cqBeuwSvR_XQF5bM_DK4jFZJx3RxmM0_thcBcZVd5fLP6lYAFFku6a3GE63wSz03safei-fNDdWyRPh1gMDyaBm-SZ6TC4zkQ'
+    ]
+
+    tasks = [fetch_images(cookie) for cookie in cookies]
+    results = await asyncio.gather(*tasks)
+    all_images = [image for sublist in results for image in sublist]
+    print(f"All images: {all_images}")
+
+asyncio.run(main())
+"""   
